@@ -150,3 +150,79 @@ contract Duck128Pair is ReentrancyGuard {
         _burn(msg.sender, liquidity);
         _safeTransfer(token0, to, amount0);
         _safeTransfer(token1, to, amount1);
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+        _update(balance0, balance1, reserve0, reserve1);
+        emit D128_Burn(msg.sender, amount0, amount1, to);
+        return (amount0, amount1);
+    }
+
+    function swap(uint256 amount0Out, uint256 amount1Out, address to, bytes calldata) external nonReentrant {
+        if (to == address(0)) revert D128P_InvalidTo();
+        (uint112 _reserve0, uint112 _reserve1,) = getReserves();
+        if (amount0Out >= _reserve0 || amount1Out >= _reserve1) revert D128P_InsufficientOutputAmount();
+        if (amount0Out > 0) _safeTransfer(token0, to, amount0Out);
+        if (amount1Out > 0) _safeTransfer(token1, to, amount1Out);
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+        uint256 amount0In = balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
+        uint256 amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
+        if (amount0In == 0 && amount1In == 0) revert D128P_InsuffLiquidity();
+        {
+            uint256 fee = swapFeeBasisPoints;
+            if (fee > 0) {
+                uint256 amount0InAdj = amount0In;
+                uint256 amount1InAdj = amount1In;
+                if (amount0InAdj > 0) amount0InAdj -= (amount0InAdj * fee) / D128P_BASIS_DENOM;
+                if (amount1InAdj > 0) amount1InAdj -= (amount1InAdj * fee) / D128P_BASIS_DENOM;
+                balance0 = IERC20(token0).balanceOf(address(this));
+                balance1 = IERC20(token1).balanceOf(address(this));
+                uint256 k = uint256(_reserve0) * _reserve1;
+                if ((balance0 * balance1) < k) revert D128P_K();
+            } else {
+                uint256 k = uint256(_reserve0) * _reserve1;
+                if ((balance0 * balance1) < k) revert D128P_K();
+            }
+        }
+        _update(balance0, balance1, reserve0, reserve1);
+        emit D128_Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
+    }
+
+    function skim(address to) external nonReentrant {
+        _safeTransfer(token0, to, IERC20(token0).balanceOf(address(this)) - reserve0);
+        _safeTransfer(token1, to, IERC20(token1).balanceOf(address(this)) - reserve1);
+    }
+
+    function sync() external nonReentrant {
+        _update(
+            IERC20(token0).balanceOf(address(this)),
+            IERC20(token1).balanceOf(address(this)),
+            reserve0,
+            reserve1
+        );
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        if (spender == address(0)) revert D128P_ZeroAddress();
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        if (to == address(0)) revert D128P_ZeroAddress();
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        if (to == address(0)) revert D128P_ZeroAddress();
+        uint256 allowed = allowance[from][msg.sender];
+        if (allowed != type(uint256).max) allowance[from][msg.sender] = allowed - amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function _sqrt(uint256 x) private pure returns (uint256 y) {
+        if (x == 0) return 0;
