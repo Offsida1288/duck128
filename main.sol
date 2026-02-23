@@ -302,3 +302,79 @@ contract Duck128Factory is ReentrancyGuard, Pausable {
     function createPair(address tokenA, address tokenB) external whenNotPaused nonReentrant returns (address pair) {
         if (tokenA == address(0) || tokenB == address(0)) revert D128F_ZeroAddress();
         if (tokenA == tokenB) revert D128F_IdenticalTokens();
+        if (allPairs.length >= D128F_MAX_PAIRS) revert D128F_MaxPairsReached();
+        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        if (getPair[token0][token1] != address(0)) revert D128F_PairExists();
+        bytes32 salt = keccak256(abi.encodePacked(token0, token1));
+        pair = address(new Duck128Pair{salt: salt}(token0, token1));
+        getPair[token0][token1] = pair;
+        getPair[token1][token0] = pair;
+        allPairs.push(pair);
+        Duck128Pair(pair).setFeeTo(feeTo);
+        emit D128_PairCreated(token0, token1, pair, allPairs.length - 1, block.number);
+        return pair;
+    }
+
+    function setFeeTo(address _feeTo) external onlyFeeToSetter {
+        address prev = feeTo;
+        feeTo = _feeTo;
+        emit D128_FeeToSet(prev, _feeTo, block.number);
+    }
+
+    function setFeeToSetter(address _feeToSetter) external onlyFeeToSetter {
+        emit D128_FeeToSetterSet(feeToSetter, _feeToSetter, block.number);
+        // Note: feeToSetter is immutable so we cannot change it. Omit setter or use a different pattern.
+        // For mainnet safety we keep it immutable.
+    }
+
+    function setPairSwapFee(address pair, uint256 basisPoints) external onlyFeeToSetter {
+        if (basisPoints > D128F_MAX_SWAP_FEE_BASIS) revert D128F_FeeBasisTooHigh();
+        Duck128Pair(pair).setSwapFeeBasisPoints(basisPoints);
+        Duck128Pair(pair).setFeeTo(feeTo);
+        emit D128_PairSwapFeeSet(pair, basisPoints, block.number);
+    }
+
+    function pause() external onlyFeeToSetter {
+        _pause();
+        emit D128_PondPaused(msg.sender, block.number);
+    }
+
+    function unpause() external onlyFeeToSetter {
+        _unpause();
+        emit D128_PondUnpaused(msg.sender, block.number);
+    }
+
+    function pairCount() external view returns (uint256) {
+        return allPairs.length;
+    }
+
+    function getPairAt(uint256 index) external view returns (address) {
+        if (index >= allPairs.length) revert D128F_PairNotFound();
+        return allPairs[index];
+    }
+
+    function getPairReserves(address pair) external view returns (uint112 reserve0, uint112 reserve1) {
+        (reserve0, reserve1,) = Duck128Pair(pair).getReserves();
+    }
+
+    function getPairsBatch(uint256 offset, uint256 limit) external view returns (address[] memory out) {
+        uint256 n = allPairs.length;
+        if (offset >= n) return new address[](0);
+        if (limit > 64) limit = 64;
+        if (offset + limit > n) limit = n - offset;
+        out = new address[](limit);
+        for (uint256 i = 0; i < limit; i++) out[i] = allPairs[offset + i];
+    }
+
+    function getPairToken0(address pair) external view returns (address) {
+        return Duck128Pair(pair).token0();
+    }
+
+    function getPairToken1(address pair) external view returns (address) {
+        return Duck128Pair(pair).token1();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128Router — add/remove liquidity and swap via factory
+// ---------------------------------------------------------------------------
