@@ -226,3 +226,79 @@ contract Duck128Pair is ReentrancyGuard {
 
     function _sqrt(uint256 x) private pure returns (uint256 y) {
         if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+    }
+
+    function _min(uint256 a, uint256 b) private pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
+    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) public view returns (uint256 amountOut) {
+        if (amountIn == 0) return 0;
+        if (reserveIn == 0 || reserveOut == 0) revert D128P_InsuffLiquidity();
+        uint256 amountInWithFee = amountIn * (D128P_BASIS_DENOM - swapFeeBasisPoints);
+        amountOut = (amountInWithFee * reserveOut) / (reserveIn * D128P_BASIS_DENOM + amountInWithFee);
+    }
+
+    function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut) public view returns (uint256 amountIn) {
+        if (amountOut == 0) return 0;
+        if (reserveIn == 0 || reserveOut == 0) revert D128P_InsuffLiquidity();
+        if (amountOut >= reserveOut) revert D128P_InsufficientOutputAmount();
+        amountIn = (reserveIn * amountOut * D128P_BASIS_DENOM) / ((reserveOut - amountOut) * (D128P_BASIS_DENOM - swapFeeBasisPoints)) + 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128Factory — creates and tracks pairs
+// ---------------------------------------------------------------------------
+
+contract Duck128Factory is ReentrancyGuard, Pausable {
+    event D128_PairCreated(address indexed token0, address indexed token1, address pair, uint256 pairIndex, uint256 atBlock);
+    event D128_FeeToSet(address indexed previousFeeTo, address indexed newFeeTo, uint256 atBlock);
+    event D128_FeeToSetterSet(address indexed previous, address indexed next, uint256 atBlock);
+    event D128_PairSwapFeeSet(address indexed pair, uint256 basisPoints, uint256 atBlock);
+    event D128_PondPaused(address indexed by, uint256 atBlock);
+    event D128_PondUnpaused(address indexed by, uint256 atBlock);
+    event D128_ProtocolTreasurySet(address indexed previous, address indexed next, uint256 atBlock);
+
+    error D128F_ZeroAddress();
+    error D128F_IdenticalTokens();
+    error D128F_PairExists();
+    error D128F_NotFeeToSetter();
+    error D128F_PairNotFound();
+    error D128F_MaxPairsReached();
+    error D128F_Paused();
+    error D128F_FeeBasisTooHigh();
+
+    uint256 public constant D128F_MAX_PAIRS = 128;
+    uint256 public constant D128F_BASIS_DENOM = 10_000;
+    uint256 public constant D128F_MAX_SWAP_FEE_BASIS = 300;
+    bytes32 public constant D128F_PAIR_INIT_CODE_HASH = keccak256(type(Duck128Pair).creationCode);
+
+    address public immutable feeToSetter;
+    address public immutable protocolTreasury;
+    uint256 public immutable deployBlock;
+
+    address public feeTo;
+    mapping(address => mapping(address => address)) public getPair;
+    address[] public allPairs;
+
+    modifier onlyFeeToSetter() {
+        if (msg.sender != feeToSetter) revert D128F_NotFeeToSetter();
+        _;
+    }
+
+    constructor() {
+        feeToSetter = address(0x5f8a2c9e1b4d7f0a3c6e9b2d5f8a1c4e7b0d3f6);
+        protocolTreasury = address(0x6a1d4e8b2c5f9a0d3e6b1c4f7a9d2e5b8c0f3a6);
+        deployBlock = block.number;
+    }
+
+    function createPair(address tokenA, address tokenB) external whenNotPaused nonReentrant returns (address pair) {
+        if (tokenA == address(0) || tokenB == address(0)) revert D128F_ZeroAddress();
+        if (tokenA == tokenB) revert D128F_IdenticalTokens();
