@@ -74,3 +74,79 @@ contract Duck128Pair is ReentrancyGuard {
         _;
     }
 
+    constructor(address _token0, address _token1) {
+        if (_token0 == address(0) || _token1 == address(0)) revert D128P_ZeroAddress();
+        if (_token0 == _token1) revert D128P_IdenticalTokens();
+        (token0, token1) = _token0 < _token1 ? (_token0, _token1) : (_token1, _token0);
+        factory = msg.sender;
+    }
+
+    function _safeTransfer(address token, address to, uint256 value) private {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, value));
+        if (!success || (data.length > 0 && !abi.decode(data, (bool)))) revert D128P_TransferFailed();
+    }
+
+    function setSwapFeeBasisPoints(uint256 basis) external onlyFactory {
+        if (basis > D128P_MAX_FEE_BASIS) revert D128P_ExcessiveInputAmount();
+        swapFeeBasisPoints = basis;
+    }
+
+    function setFeeTo(address _feeTo) external onlyFactory {
+        feeTo = _feeTo;
+    }
+
+    function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
+        _reserve0 = reserve0;
+        _reserve1 = reserve1;
+        _blockTimestampLast = blockTimestampLast;
+    }
+
+    function _update(uint256 balance0, uint256 balance1, uint112 _reserve0, uint112 _reserve1) private {
+        if (balance0 > type(uint112).max || balance1 > type(uint112).max) revert D128P_ExcessiveInputAmount();
+        blockTimestampLast = uint32(block.timestamp);
+        reserve0 = uint112(balance0);
+        reserve1 = uint112(balance1);
+        emit D128_Sync(reserve0, reserve1);
+    }
+
+    function _mint(address to, uint256 amount) private {
+        totalSupply += amount;
+        balanceOf[to] += amount;
+    }
+
+    function _burn(address from, uint256 amount) private {
+        balanceOf[from] -= amount;
+        totalSupply -= amount;
+    }
+
+    function mint(address to) external nonReentrant returns (uint256 liquidity) {
+        (uint112 _reserve0, uint112 _reserve1,) = getReserves();
+        uint256 balance0 = IERC20(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20(token1).balanceOf(address(this));
+        uint256 amount0 = balance0 - _reserve0;
+        uint256 amount1 = balance1 - _reserve1;
+
+        if (totalSupply == 0) {
+            liquidity = _sqrt(amount0 * amount1) - D128P_MINIMUM_LIQUIDITY;
+            if (liquidity == 0) revert D128P_InsufficientLiquidityMint();
+            _mint(address(0), D128P_MINIMUM_LIQUIDITY);
+        } else {
+            liquidity = _min((amount0 * totalSupply) / _reserve0, (amount1 * totalSupply) / _reserve1);
+            if (liquidity == 0) revert D128P_InsufficientLiquidityMint();
+        }
+        _mint(to, liquidity);
+        _update(balance0, balance1, reserve0, reserve1);
+        emit D128_Mint(msg.sender, amount0, amount1);
+        return liquidity;
+    }
+
+    function burn(address to) external nonReentrant returns (uint256 amount0, uint256 amount1) {
+        uint256 liquidity = balanceOf[msg.sender];
+        if (liquidity == 0) revert D128P_ZeroAmount();
+        (uint112 _reserve0, uint112 _reserve1,) = getReserves();
+        amount0 = (liquidity * _reserve0) / totalSupply;
+        amount1 = (liquidity * _reserve1) / totalSupply;
+        if (amount0 == 0 && amount1 == 0) revert D128P_InsufficientLiquidityBurn();
+        _burn(msg.sender, liquidity);
+        _safeTransfer(token0, to, amount0);
+        _safeTransfer(token1, to, amount1);
