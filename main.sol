@@ -1670,3 +1670,73 @@ contract Duck128PondFinalView {
 
 // ---------------------------------------------------------------------------
 // Duck128PondCheck — sanity check views
+// ---------------------------------------------------------------------------
+
+contract Duck128PondCheck {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function checkPairExists(address tokenA, address tokenB) external view returns (bool exists, address pair) {
+        pair = Duck128Factory(factory).getPair(tokenA, tokenB);
+        exists = pair != address(0);
+    }
+
+    function checkReservesNonZero(address pair) external view returns (bool) {
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        return r0 > 0 && r1 > 0;
+    }
+
+    function checkTotalSupplyPositive(address pair) external view returns (bool) {
+        return Duck128Pair(pair).totalSupply() > 0;
+    }
+
+    function checkFactoryNotPaused() external view returns (bool) {
+        return !Duck128Factory(payable(factory)).paused();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondMinimalView — minimal one-liner views for integrations
+// ---------------------------------------------------------------------------
+
+contract Duck128PondMinimalView {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function pairCount() external view returns (uint256) {
+        return Duck128Factory(factory).pairCount();
+    }
+
+    function getPair(address tokenA, address tokenB) external view returns (address) {
+        return Duck128Factory(factory).getPair(tokenA, tokenB);
+    }
+
+    function pairToken0(address pair) external view returns (address) {
+        return Duck128Pair(pair).token0();
+    }
+
+    function pairToken1(address pair) external view returns (address) {
+        return Duck128Pair(pair).token1();
+    }
+
+    function pairReserve0(address pair) external view returns (uint112) {
+        (uint112 r0,,) = Duck128Pair(pair).getReserves();
+        return r0;
+    }
+
+    function pairReserve1(address pair) external view returns (uint112) {
+        (, uint112 r1,) = Duck128Pair(pair).getReserves();
+        return r1;
+    }
+
+    function pairTotalSupply(address pair) external view returns (uint256) {
+        return Duck128Pair(pair).totalSupply();
+    }
+}
+
