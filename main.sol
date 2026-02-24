@@ -1062,3 +1062,79 @@ library Duck128LiquidityMath {
     function _sqrt(uint256 x) private pure returns (uint256 y) {
         if (x == 0) return 0;
         uint256 z = (x + 1) / 2;
+        y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+    }
+
+    function computeAmountsFromLiquidity(
+        uint256 liquidity,
+        uint256 reserve0,
+        uint256 reserve1,
+        uint256 totalSupply
+    ) internal pure returns (uint256 amount0, uint256 amount1) {
+        amount0 = (liquidity * reserve0) / totalSupply;
+        amount1 = (liquidity * reserve1) / totalSupply;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondViewV3 — extended pair metadata
+// ---------------------------------------------------------------------------
+
+contract Duck128PondViewV3 {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    struct PairMeta {
+        address pair;
+        address token0;
+        address token1;
+        uint112 reserve0;
+        uint112 reserve1;
+        uint256 totalSupply;
+        uint256 swapFeeBasisPoints;
+        address feeTo;
+    }
+
+    function getPairMeta(address pair) external view returns (PairMeta memory m) {
+        m.pair = pair;
+        m.token0 = Duck128Pair(pair).token0();
+        m.token1 = Duck128Pair(pair).token1();
+        (m.reserve0, m.reserve1,) = Duck128Pair(pair).getReserves();
+        m.totalSupply = Duck128Pair(pair).totalSupply();
+        m.swapFeeBasisPoints = Duck128Pair(pair).swapFeeBasisPoints();
+        m.feeTo = Duck128Pair(pair).feeTo();
+    }
+
+    function getPairMetaBatch(address[] calldata pairs) external view returns (PairMeta[] memory out) {
+        out = new PairMeta[](pairs.length);
+        for (uint256 i = 0; i < pairs.length; i++) {
+            address p = pairs[i];
+            out[i] = PairMeta({
+                pair: p,
+                token0: Duck128Pair(p).token0(),
+                token1: Duck128Pair(p).token1(),
+                reserve0: 0,
+                reserve1: 0,
+                totalSupply: Duck128Pair(p).totalSupply(),
+                swapFeeBasisPoints: Duck128Pair(p).swapFeeBasisPoints(),
+                feeTo: Duck128Pair(p).feeTo()
+            });
+            (out[i].reserve0, out[i].reserve1,) = Duck128Pair(p).getReserves();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128FeeMath — fee calculations
+// ---------------------------------------------------------------------------
+
+library Duck128FeeMath {
+    uint256 internal constant BASIS = 10_000;
+
