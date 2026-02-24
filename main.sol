@@ -1442,3 +1442,79 @@ contract Duck128PondSummary {
         uint112 reserve1;
         uint256 totalSupply;
         uint256 swapFeeBasisPoints;
+        uint256 k;
+    }
+
+    function getSummary(address pair) external view returns (PairSummary memory s) {
+        s.pair = pair;
+        s.token0 = Duck128Pair(pair).token0();
+        s.token1 = Duck128Pair(pair).token1();
+        (s.reserve0, s.reserve1,) = Duck128Pair(pair).getReserves();
+        s.totalSupply = Duck128Pair(pair).totalSupply();
+        s.swapFeeBasisPoints = Duck128Pair(pair).swapFeeBasisPoints();
+        s.k = uint256(s.reserve0) * uint256(s.reserve1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128FactorySummary — factory-level summary
+// ---------------------------------------------------------------------------
+
+contract Duck128FactorySummary {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function getFactorySummary() external view returns (
+        uint256 pairCount,
+        address feeTo,
+        address feeToSetter,
+        address protocolTreasury,
+        uint256 deployBlock
+    ) {
+        Duck128Factory f = Duck128Factory(payable(factory));
+        pairCount = f.pairCount();
+        feeTo = f.feeTo();
+        feeToSetter = f.feeToSetter();
+        protocolTreasury = f.protocolTreasury();
+        deployBlock = f.deployBlock();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondAggregator — aggregate views for many pairs at once
+// ---------------------------------------------------------------------------
+
+contract Duck128PondAggregator {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function getTotalSupplyForPairs(uint256 offset, uint256 limit) external view returns (uint256 total) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        if (offset >= n) return 0;
+        if (limit > 64) limit = 64;
+        if (offset + limit > n) limit = n - offset;
+        for (uint256 i = 0; i < limit; i++) {
+            address p = Duck128Factory(factory).getPairAt(offset + i);
+            total += Duck128Pair(p).totalSupply();
+        }
+    }
+
+    function getReserveSums(uint256 offset, uint256 limit) external view returns (uint256 sum0, uint256 sum1) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        if (offset >= n) return (0, 0);
+        if (limit > 64) limit = 64;
+        if (offset + limit > n) limit = n - offset;
+        for (uint256 i = 0; i < limit; i++) {
+            address p = Duck128Factory(factory).getPairAt(offset + i);
+            (uint112 r0, uint112 r1,) = Duck128Pair(p).getReserves();
+            sum0 += r0;
+            sum1 += r1;
+        }
+    }
+
