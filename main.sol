@@ -986,3 +986,79 @@ contract Duck128RouterHelpers {
             pairs[i] = p;
         }
         return (true, pairs);
+    }
+
+    function getPathReserves(address[] calldata path) external view returns (uint256[] memory reserveIn, uint256[] memory reserveOut) {
+        if (path.length < 2) return (new uint256[](0), new uint256[](0));
+        reserveIn = new uint256[](path.length - 1);
+        reserveOut = new uint256[](path.length - 1);
+        for (uint256 i = 0; i < path.length - 1; i++) {
+            address p = Duck128Factory(factory).getPair(path[i], path[i + 1]);
+            (uint112 r0, uint112 r1,) = Duck128Pair(p).getReserves();
+            address t0 = Duck128Pair(p).token0();
+            (reserveIn[i], reserveOut[i]) = path[i] == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128Events — event signatures for indexing (no state)
+// ---------------------------------------------------------------------------
+
+contract Duck128Events {
+    event D128_PairCreated(address indexed token0, address indexed token1, address pair, uint256 pairIndex, uint256 atBlock);
+    event D128_Mint(address indexed sender, uint256 amount0, uint256 amount1);
+    event D128_Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to);
+    event D128_Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to);
+    event D128_Sync(uint256 reserve0, uint256 reserve1);
+}
+
+// ---------------------------------------------------------------------------
+// Duck128Deployer — optional deployer that creates Factory and Router in one tx (reference only; deploy separately in practice)
+// ---------------------------------------------------------------------------
+
+contract Duck128Deployer {
+    function deployFactory() external returns (address factoryAddr) {
+        Duck128Factory f = new Duck128Factory();
+        factoryAddr = address(f);
+    }
+
+    function deployRouter(address factoryAddr) external returns (address routerAddr) {
+        if (factoryAddr == address(0)) revert D128D_ZeroFactory();
+        Duck128Router r = new Duck128Router(factoryAddr);
+        routerAddr = address(r);
+    }
+
+    function deployPondView(address factoryAddr) external returns (address viewAddr) {
+        if (factoryAddr == address(0)) revert D128D_ZeroFactory();
+        Duck128PondView v = new Duck128PondView(factoryAddr);
+        viewAddr = address(v);
+    }
+
+    error D128D_ZeroFactory();
+}
+
+// ---------------------------------------------------------------------------
+// Duck128LiquidityMath — pure math for LP amounts
+// ---------------------------------------------------------------------------
+
+library Duck128LiquidityMath {
+    function computeLiquidityFromAmounts(
+        uint256 amount0,
+        uint256 amount1,
+        uint256 reserve0,
+        uint256 reserve1,
+        uint256 totalSupply
+    ) internal pure returns (uint256 liquidity) {
+        if (totalSupply == 0) {
+            liquidity = _sqrt(amount0 * amount1);
+        } else {
+            uint256 l0 = (amount0 * totalSupply) / reserve0;
+            uint256 l1 = (amount1 * totalSupply) / reserve1;
+            liquidity = l0 < l1 ? l0 : l1;
+        }
+    }
+
+    function _sqrt(uint256 x) private pure returns (uint256 y) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
