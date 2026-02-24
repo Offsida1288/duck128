@@ -378,3 +378,79 @@ contract Duck128Factory is ReentrancyGuard, Pausable {
 // ---------------------------------------------------------------------------
 // Duck128Router — add/remove liquidity and swap via factory
 // ---------------------------------------------------------------------------
+
+contract Duck128Router is ReentrancyGuard {
+    event D128_RouterLiquidityAdded(address indexed pair, address indexed provider, uint256 amount0, uint256 amount1, uint256 liquidity, uint256 atBlock);
+    event D128_RouterLiquidityRemoved(address indexed pair, address indexed provider, uint256 amount0, uint256 amount1, uint256 liquidity, uint256 atBlock);
+    event D128_RouterSwap(address indexed pair, address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address to, uint256 atBlock);
+
+    error D128R_ZeroAddress();
+    error D128R_Expired();
+    error D128R_InsufficientAmount();
+    error D128R_InsufficientLiquidity();
+    error D128R_TransferFailed();
+    error D128R_InvalidPath();
+    error D128R_ExcessiveAmount();
+
+    uint256 public constant D128R_DEADLINE_DISABLED = type(uint256).max;
+    uint256 public constant D128R_MINIMUM_LIQUIDITY = 10**3;
+
+    address public immutable factory;
+
+    constructor(address _factory) {
+        if (_factory == address(0)) revert D128R_ZeroAddress();
+        factory = _factory;
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 value) internal {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x23b872dd, from, to, value));
+        if (!success || (data.length > 0 && !abi.decode(data, (bool)))) revert D128R_TransferFailed();
+    }
+
+    function _safeTransfer(address token, address to, uint256 value) internal {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, value));
+        if (!success || (data.length > 0 && !abi.decode(data, (bool)))) revert D128R_TransferFailed();
+    }
+
+    function addLiquidity(
+        address tokenA,
+        address tokenB,
+        uint256 amountADesired,
+        uint256 amountBDesired,
+        uint256 amountAMin,
+        uint256 amountBMin,
+        address to,
+        uint256 deadline
+    ) external nonReentrant returns (uint256 amountA, uint256 amountB, uint256 liquidity) {
+        if (deadline != D128R_DEADLINE_DISABLED && block.timestamp > deadline) revert D128R_Expired();
+        if (to == address(0)) revert D128R_ZeroAddress();
+        address pair = Duck128Factory(factory).getPair(tokenA, tokenB);
+        if (pair == address(0)) revert D128R_InvalidPath();
+        (uint112 reserve0, uint112 reserve1,) = Duck128Pair(pair).getReserves();
+        address token0 = Duck128Pair(pair).token0();
+        address token1 = Duck128Pair(pair).token1();
+        (address tA, address tB) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        uint256 reserveA = tokenA == token0 ? reserve0 : reserve1;
+        uint256 reserveB = tokenA == token0 ? reserve1 : reserve0;
+        if (reserveA == 0 && reserveB == 0) {
+            (amountA, amountB) = (amountADesired, amountBDesired);
+        } else {
+            uint256 amountBOptimal = (amountADesired * reserveB) / reserveA;
+            if (amountBOptimal <= amountBDesired) {
+                if (amountBOptimal < amountBMin) revert D128R_InsufficientAmount();
+                (amountA, amountB) = (amountADesired, amountBOptimal);
+            } else {
+                uint256 amountAOptimal = (amountBDesired * reserveA) / reserveB;
+                if (amountAOptimal > amountADesired || amountAOptimal < amountAMin) revert D128R_InsufficientAmount();
+                (amountA, amountB) = (amountAOptimal, amountBDesired);
+            }
+        }
+        _safeTransferFrom(tokenA, msg.sender, pair, amountA);
+        _safeTransferFrom(tokenB, msg.sender, pair, amountB);
+        liquidity = Duck128Pair(pair).mint(to);
+        if (liquidity < D128R_MINIMUM_LIQUIDITY) revert D128R_InsufficientLiquidity();
+        emit D128_RouterLiquidityAdded(pair, msg.sender, amountA, amountB, liquidity, block.number);
+        return (amountA, amountB, liquidity);
+    }
+
+    function removeLiquidity(
