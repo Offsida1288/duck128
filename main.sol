@@ -682,3 +682,79 @@ contract Duck128PondView {
 }
 
 // ---------------------------------------------------------------------------
+// Duck128Constants — on-chain constant reference (no storage)
+// ---------------------------------------------------------------------------
+
+contract Duck128Constants {
+    uint256 public constant D128_MAX_PAIRS = 128;
+    uint256 public constant D128_BASIS_DENOM = 10_000;
+    uint256 public constant D128_MAX_SWAP_FEE_BASIS = 300;
+    uint256 public constant D128_MINIMUM_LIQUIDITY = 10**3;
+    uint256 public constant D128_VIEW_BATCH_MAX = 64;
+    bytes32 public constant D128_POND_DOMAIN = keccak256("duck128.D128_POND_DOMAIN");
+    bytes32 public constant D128_PAIR_NAMESPACE = keccak256("duck128.D128_PAIR_NAMESPACE");
+}
+
+// ---------------------------------------------------------------------------
+// Duck128FactoryExtended — optional batch and emergency (inherits Factory logic via composition or extend)
+// We add more view and admin helpers here as a separate contract that reads from Factory.
+// ---------------------------------------------------------------------------
+
+contract Duck128FactoryExtended {
+    Duck128Factory public immutable pond;
+
+    error D128E_ZeroAddress();
+
+    constructor(address _pond) {
+        if (_pond == address(0)) revert D128E_ZeroAddress();
+        pond = Duck128Factory(payable(_pond));
+    }
+
+    function getTotalLiquidityValue(address pair, address) external view returns (uint256 totalSupply, uint256 reserve0, uint256 reserve1) {
+        totalSupply = Duck128Pair(pair).totalSupply();
+        (reserve0, reserve1,) = Duck128Pair(pair).getReserves();
+    }
+
+    function getFeeToFromFactory() external view returns (address) {
+        return pond.feeTo();
+    }
+
+    function getFeeToSetterFromFactory() external view returns (address) {
+        return pond.feeToSetter();
+    }
+
+    function getProtocolTreasuryFromFactory() external view returns (address) {
+        return pond.protocolTreasury();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondViewV2 — more view helpers
+// ---------------------------------------------------------------------------
+
+contract Duck128PondViewV2 {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function getReservesForPair(address pair) external view returns (uint256 r0, uint256 r1, uint32 blockTimestampLast) {
+        (uint112 _r0, uint112 _r1, uint32 _t) = Duck128Pair(pair).getReserves();
+        return (uint256(_r0), uint256(_r1), _t);
+    }
+
+    function getLiquidityFor(address pair, address account) external view returns (uint256) {
+        return Duck128Pair(pair).balanceOf(account);
+    }
+
+    function getPairTokens(address pair) external view returns (address token0, address token1) {
+        token0 = Duck128Pair(pair).token0();
+        token1 = Duck128Pair(pair).token1();
+    }
+
+    function getAmountOutFromPair(address pair, uint256 amountIn, bool zeroForOne) external view returns (uint256 amountOut) {
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+        (uint256 reserveIn, uint256 reserveOut) = zeroForOne ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        amountOut = Duck128Library.getAmountOut(amountIn, reserveIn, reserveOut, fee);
