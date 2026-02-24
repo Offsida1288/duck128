@@ -834,3 +834,79 @@ contract Duck128RouterQuoter {
 contract Duck128PairView {
     function getReservesView(address pair) external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast) {
         return Duck128Pair(pair).getReserves();
+    }
+
+    function getTotalSupplyView(address pair) external view returns (uint256) {
+        return Duck128Pair(pair).totalSupply();
+    }
+
+    function getBalanceOfView(address pair, address account) external view returns (uint256) {
+        return Duck128Pair(pair).balanceOf(account);
+    }
+
+    function getToken0View(address pair) external view returns (address) {
+        return Duck128Pair(pair).token0();
+    }
+
+    function getToken1View(address pair) external view returns (address) {
+        return Duck128Pair(pair).token1();
+    }
+
+    function getSwapFeeView(address pair) external view returns (uint256) {
+        return Duck128Pair(pair).swapFeeBasisPoints();
+    }
+
+    function getFeeToView(address pair) external view returns (address) {
+        return Duck128Pair(pair).feeTo();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128BatchView — batch pair data for UI
+// ---------------------------------------------------------------------------
+
+contract Duck128BatchView {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    struct PairReserves {
+        address pair;
+        uint112 reserve0;
+        uint112 reserve1;
+        uint256 totalSupply;
+    }
+
+    function getManyReserves(uint256 offset, uint256 limit) external view returns (PairReserves[] memory out) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        if (offset >= n) return new PairReserves[](0);
+        if (limit > 64) limit = 64;
+        if (offset + limit > n) limit = n - offset;
+        out = new PairReserves[](limit);
+        for (uint256 i = 0; i < limit; i++) {
+            address p = Duck128Factory(factory).getPairAt(offset + i);
+            (uint112 r0, uint112 r1,) = Duck128Pair(p).getReserves();
+            out[i] = PairReserves({
+                pair: p,
+                reserve0: r0,
+                reserve1: r1,
+                totalSupply: Duck128Pair(p).totalSupply()
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondStats — aggregate stats across all pairs
+// ---------------------------------------------------------------------------
+
+contract Duck128PondStats {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function totalPairs() external view returns (uint256) {
