@@ -910,3 +910,79 @@ contract Duck128PondStats {
     }
 
     function totalPairs() external view returns (uint256) {
+        return Duck128Factory(factory).pairCount();
+    }
+
+    function totalReservesAcrossPairs(uint256 offset, uint256 limit) external view returns (
+        uint256 sumReserve0,
+        uint256 sumReserve1,
+        uint256 sumTotalSupply
+    ) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        if (offset >= n) return (0, 0, 0);
+        if (limit > 64) limit = 64;
+        if (offset + limit > n) limit = n - offset;
+        for (uint256 i = 0; i < limit; i++) {
+            address p = Duck128Factory(factory).getPairAt(offset + i);
+            (uint112 r0, uint112 r1,) = Duck128Pair(p).getReserves();
+            sumReserve0 += r0;
+            sumReserve1 += r1;
+            sumTotalSupply += Duck128Pair(p).totalSupply();
+        }
+    }
+
+    function pairExists(address tokenA, address tokenB) external view returns (bool) {
+        return Duck128Factory(factory).getPair(tokenA, tokenB) != address(0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PairHelpers — additional pair view helpers
+// ---------------------------------------------------------------------------
+
+contract Duck128PairHelpers {
+    function getReservesFull(address pair) external view returns (
+        uint256 reserve0,
+        uint256 reserve1,
+        uint32 blockTimestampLast,
+        uint256 totalSupply,
+        uint256 swapFeeBasisPoints
+    ) {
+        (uint112 r0, uint112 r1, uint32 t) = Duck128Pair(pair).getReserves();
+        return (
+            uint256(r0),
+            uint256(r1),
+            t,
+            Duck128Pair(pair).totalSupply(),
+            Duck128Pair(pair).swapFeeBasisPoints()
+        );
+    }
+
+    function getLiquidityShare(address pair, address account) external view returns (uint256 balance, uint256 total, uint256 shareBasis) {
+        balance = Duck128Pair(pair).balanceOf(account);
+        total = Duck128Pair(pair).totalSupply();
+        if (total == 0) shareBasis = 0;
+        else shareBasis = (balance * 10_000) / total;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128RouterHelpers — deadline and path validation views
+// ---------------------------------------------------------------------------
+
+contract Duck128RouterHelpers {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function validatePath(address[] calldata path) external view returns (bool valid, address[] memory pairs) {
+        if (path.length < 2) return (false, new address[](0));
+        pairs = new address[](path.length - 1);
+        for (uint256 i = 0; i < path.length - 1; i++) {
+            address p = Duck128Factory(factory).getPair(path[i], path[i + 1]);
+            if (p == address(0)) return (false, pairs);
+            pairs[i] = p;
+        }
+        return (true, pairs);
