@@ -1290,3 +1290,79 @@ contract Duck128ReserveTracker {
         reserve0 = new uint112[](n);
         reserve1 = new uint112[](n);
         blockTimestampLast = new uint32[](n);
+        blockNumber = block.number;
+        for (uint256 i = 0; i < n; i++) {
+            (reserve0[i], reserve1[i], blockTimestampLast[i]) = Duck128Pair(pairs[i]).getReserves();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128LPBalance — LP token balance helpers
+// ---------------------------------------------------------------------------
+
+contract Duck128LPBalance {
+    function getBalances(address pair, address[] calldata accounts) external view returns (uint256[] memory balances) {
+        uint256 n = accounts.length;
+        if (n > 64) n = 64;
+        balances = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            balances[i] = Duck128Pair(pair).balanceOf(accounts[i]);
+        }
+    }
+
+    function getTotalSupplyAndBalance(address pair, address account) external view returns (uint256 totalSupply, uint256 balance) {
+        totalSupply = Duck128Pair(pair).totalSupply();
+        balance = Duck128Pair(pair).balanceOf(account);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128K — constant product invariant check (view)
+// ---------------------------------------------------------------------------
+
+contract Duck128K {
+    function getK(address pair) external view returns (uint256 k) {
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        k = uint256(r0) * uint256(r1);
+    }
+
+    function getKBatch(address[] calldata pairs) external view returns (uint256[] memory kValues) {
+        uint256 n = pairs.length;
+        if (n > 64) n = 64;
+        kValues = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            (uint112 r0, uint112 r1,) = Duck128Pair(pairs[i]).getReserves();
+            kValues[i] = uint256(r0) * uint256(r1);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128Addresses — immutable deployment addresses (reference)
+// ---------------------------------------------------------------------------
+
+contract Duck128Addresses {
+    address public constant D128_FEE_TO_SETTER = address(0x5f8a2c9e1b4d7f0a3c6e9b2d5f8a1c4e7b0d3f6);
+    address public constant D128_PROTOCOL_TREASURY = address(0x6a1d4e8b2c5f9a0d3e6b1c4f7a9d2e5b8c0f3a6);
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PairMetadata — name/symbol placeholder for LP token (off-chain metadata)
+// ---------------------------------------------------------------------------
+
+contract Duck128PairMetadata {
+    function getPairSymbol(address pair) external view returns (address t0, address t1) {
+        t0 = Duck128Pair(pair).token0();
+        t1 = Duck128Pair(pair).token1();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondViewV4 — combined reserves and supply
+// ---------------------------------------------------------------------------
+
+contract Duck128PondViewV4 {
+    address public immutable factory;
+
+    constructor(address _factory) {
