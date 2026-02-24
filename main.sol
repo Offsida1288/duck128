@@ -1366,3 +1366,79 @@ contract Duck128PondViewV4 {
     address public immutable factory;
 
     constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function getReservesAndSupply(address pair) external view returns (
+        uint256 r0,
+        uint256 r1,
+        uint256 supply,
+        address token0,
+        address token1
+    ) {
+        (uint112 _r0, uint112 _r1,) = Duck128Pair(pair).getReserves();
+        r0 = _r0;
+        r1 = _r1;
+        supply = Duck128Pair(pair).totalSupply();
+        token0 = Duck128Pair(pair).token0();
+        token1 = Duck128Pair(pair).token1();
+    }
+
+    function getReservesAndSupplyBatch(address[] calldata pairs) external view returns (
+        uint256[] memory r0,
+        uint256[] memory r1,
+        uint256[] memory supply
+    ) {
+        uint256 n = pairs.length;
+        if (n > 64) n = 64;
+        r0 = new uint256[](n);
+        r1 = new uint256[](n);
+        supply = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            (uint112 _r0, uint112 _r1,) = Duck128Pair(pairs[i]).getReserves();
+            r0[i] = _r0;
+            r1[i] = _r1;
+            supply[i] = Duck128Pair(pairs[i]).totalSupply();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128RouterQuoterV2 — multi-hop quote with fee
+// ---------------------------------------------------------------------------
+
+contract Duck128RouterQuoterV2 {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function quoteExactInputMultiHop(address[] calldata path, uint256 amountIn) external view returns (uint256 amountOut) {
+        if (path.length < 2) return 0;
+        amountOut = amountIn;
+        for (uint256 i = 0; i < path.length - 1; i++) {
+            address pair = Duck128Factory(factory).getPair(path[i], path[i + 1]);
+            (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+            address t0 = Duck128Pair(pair).token0();
+            (uint256 ri, uint256 ro) = path[i] == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+            uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+            amountOut = Duck128Library.getAmountOut(amountOut, ri, ro, fee);
+        }
+        return amountOut;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondSummary — one-call summary for a pair
+// ---------------------------------------------------------------------------
+
+contract Duck128PondSummary {
+    struct PairSummary {
+        address pair;
+        address token0;
+        address token1;
+        uint112 reserve0;
+        uint112 reserve1;
+        uint256 totalSupply;
+        uint256 swapFeeBasisPoints;
