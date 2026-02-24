@@ -1214,3 +1214,79 @@ contract Duck128RouterView {
         address t0 = Duck128Pair(pair).token0();
         (uint256 ri, uint256 ro) = tokenIn == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
         uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+        amountOut = Duck128Library.getAmountOut(amountIn, ri, ro, fee);
+    }
+
+    function quoteExactOutputSingle(address tokenIn, address tokenOut, uint256 amountOut) external view returns (uint256 amountIn) {
+        address pair = Duck128Factory(factory).getPair(tokenIn, tokenOut);
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        address t0 = Duck128Pair(pair).token0();
+        (uint256 ri, uint256 ro) = tokenIn == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+        amountIn = Duck128Library.getAmountIn(amountOut, ri, ro, fee);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondRegistry — index pairs by token
+// ---------------------------------------------------------------------------
+
+contract Duck128PondRegistry {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function getPairsContainingToken(address token, uint256 maxResults) external view returns (address[] memory pairs) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        if (maxResults > 64) maxResults = 64;
+        address[] memory temp = new address[](maxResults);
+        uint256 count = 0;
+        for (uint256 i = 0; i < n && count < maxResults; i++) {
+            address p = Duck128Factory(factory).getPairAt(i);
+            if (Duck128Pair(p).token0() == token || Duck128Pair(p).token1() == token) {
+                temp[count++] = p;
+            }
+        }
+        pairs = new address[](count);
+        for (uint256 j = 0; j < count; j++) pairs[j] = temp[j];
+    }
+
+    function getPairIndex(address pair) external view returns (bool found, uint256 index) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        for (uint256 i = 0; i < n; i++) {
+            if (Duck128Factory(factory).getPairAt(i) == pair) {
+                return (true, i);
+            }
+        }
+        return (false, 0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128ReserveTracker — reserve snapshots (current only; no history)
+// ---------------------------------------------------------------------------
+
+contract Duck128ReserveTracker {
+    function getReservesSnapshot(address pair) external view returns (
+        uint112 reserve0,
+        uint112 reserve1,
+        uint32 blockTimestampLast,
+        uint256 blockNumber
+    ) {
+        (reserve0, reserve1, blockTimestampLast) = Duck128Pair(pair).getReserves();
+        blockNumber = block.number;
+    }
+
+    function getReservesSnapshotBatch(address[] calldata pairs) external view returns (
+        uint112[] memory reserve0,
+        uint112[] memory reserve1,
+        uint32[] memory blockTimestampLast,
+        uint256 blockNumber
+    ) {
+        uint256 n = pairs.length;
+        if (n > 64) n = 64;
+        reserve0 = new uint112[](n);
+        reserve1 = new uint112[](n);
+        blockTimestampLast = new uint32[](n);
