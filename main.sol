@@ -1138,3 +1138,79 @@ contract Duck128PondViewV3 {
 library Duck128FeeMath {
     uint256 internal constant BASIS = 10_000;
 
+    function applyFee(uint256 amount, uint256 feeBasis) internal pure returns (uint256 afterFee) {
+        afterFee = amount * (BASIS - feeBasis) / BASIS;
+    }
+
+    function addFee(uint256 amountAfterFee, uint256 feeBasis) internal pure returns (uint256 amountBeforeFee) {
+        if (BASIS <= feeBasis) return amountAfterFee;
+        amountBeforeFee = (amountAfterFee * BASIS) / (BASIS - feeBasis);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128FactoryViews — additional factory views
+// ---------------------------------------------------------------------------
+
+contract Duck128FactoryViews {
+    Duck128Factory public immutable pond;
+
+    constructor(address _pond) {
+        pond = Duck128Factory(payable(_pond));
+    }
+
+    function getAllPairs() external view returns (address[] memory) {
+        uint256 n = pond.pairCount();
+        address[] memory out = new address[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = pond.getPairAt(i);
+        return out;
+    }
+
+    function getPairFor(address tokenA, address tokenB) external view returns (address) {
+        return pond.getPair(tokenA, tokenB);
+    }
+
+    function getDeployBlock() external view returns (uint256) {
+        return pond.deployBlock();
+    }
+
+    function isPaused() external view returns (bool) {
+        return pond.paused();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PairFeeView — fee-related views for a pair
+// ---------------------------------------------------------------------------
+
+contract Duck128PairFeeView {
+    function getFeeParams(address pair) external view returns (uint256 swapFeeBasisPoints, address feeTo) {
+        swapFeeBasisPoints = Duck128Pair(pair).swapFeeBasisPoints();
+        feeTo = Duck128Pair(pair).feeTo();
+    }
+
+    function getAmountOutWithFee(address pair, uint256 amountIn, bool zeroForOne) external view returns (uint256) {
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+        (uint256 ri, uint256 ro) = zeroForOne ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        return Duck128Library.getAmountOut(amountIn, ri, ro, fee);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128RouterView — router quote views without router state
+// ---------------------------------------------------------------------------
+
+contract Duck128RouterView {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function quoteExactInputSingle(address tokenIn, address tokenOut, uint256 amountIn) external view returns (uint256 amountOut) {
+        address pair = Duck128Factory(factory).getPair(tokenIn, tokenOut);
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        address t0 = Duck128Pair(pair).token0();
+        (uint256 ri, uint256 ro) = tokenIn == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
