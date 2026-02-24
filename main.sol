@@ -758,3 +758,79 @@ contract Duck128PondViewV2 {
         uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
         (uint256 reserveIn, uint256 reserveOut) = zeroForOne ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
         amountOut = Duck128Library.getAmountOut(amountIn, reserveIn, reserveOut, fee);
+    }
+
+    function getAmountInFromPair(address pair, uint256 amountOut, bool zeroForOne) external view returns (uint256 amountIn) {
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+        (uint256 reserveIn, uint256 reserveOut) = zeroForOne ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        amountIn = Duck128Library.getAmountIn(amountOut, reserveIn, reserveOut, fee);
+    }
+
+    function getPairsForToken(address token) external view returns (address[] memory pairs) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        uint256 count = 0;
+        for (uint256 i = 0; i < n; i++) {
+            address p = Duck128Factory(factory).getPairAt(i);
+            if (Duck128Pair(p).token0() == token || Duck128Pair(p).token1() == token) count++;
+        }
+        pairs = new address[](count);
+        count = 0;
+        for (uint256 i = 0; i < n; i++) {
+            address p = Duck128Factory(factory).getPairAt(i);
+            if (Duck128Pair(p).token0() == token || Duck128Pair(p).token1() == token) {
+                pairs[count++] = p;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128RouterQuoter — view-only quote without state change
+// ---------------------------------------------------------------------------
+
+contract Duck128RouterQuoter {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function quoteExactInput(address[] memory path, uint256 amountIn) external view returns (uint256[] memory amounts) {
+        if (path.length < 2) revert D128R_InvalidPath();
+        amounts = new uint256[](path.length);
+        amounts[0] = amountIn;
+        for (uint256 i = 0; i < path.length - 1; i++) {
+            address pair = Duck128Factory(factory).getPair(path[i], path[i + 1]);
+            (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+            address t0 = Duck128Pair(pair).token0();
+            (uint256 reserveIn, uint256 reserveOut) = path[i] == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+            uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+            amounts[i + 1] = Duck128Library.getAmountOut(amounts[i], reserveIn, reserveOut, fee);
+        }
+        return amounts;
+    }
+
+    function quoteExactOutput(address[] memory path, uint256 amountOut) external view returns (uint256[] memory amounts) {
+        if (path.length < 2) revert D128R_InvalidPath();
+        amounts = new uint256[](path.length);
+        amounts[amounts.length - 1] = amountOut;
+        for (uint256 i = path.length - 1; i > 0; i--) {
+            address pair = Duck128Factory(factory).getPair(path[i - 1], path[i]);
+            (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+            address t0 = Duck128Pair(pair).token0();
+            (uint256 reserveIn, uint256 reserveOut) = path[i - 1] == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+            uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+            amounts[i - 1] = Duck128Library.getAmountIn(amounts[i], reserveIn, reserveOut, fee);
+        }
+        return amounts;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PairView — single-pair view helpers
+// ---------------------------------------------------------------------------
+
+contract Duck128PairView {
+    function getReservesView(address pair) external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast) {
+        return Duck128Pair(pair).getReserves();
