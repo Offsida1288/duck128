@@ -1594,3 +1594,79 @@ contract Duck128QuoteSingle {
 contract Duck128PondConstantsView {
     function getMaxPairs() external pure returns (uint256) { return 128; }
     function getBasisDenom() external pure returns (uint256) { return 10_000; }
+    function getMaxSwapFeeBasis() external pure returns (uint256) { return 300; }
+    function getMinimumLiquidity() external pure returns (uint256) { return 10**3; }
+    function getViewBatchMax() external pure returns (uint256) { return 64; }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PairFactoryView — pair info by index from factory
+// ---------------------------------------------------------------------------
+
+contract Duck128PairFactoryView {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function getPairByIndex(uint256 index) external view returns (
+        address pair,
+        address token0,
+        address token1,
+        uint112 reserve0,
+        uint112 reserve1,
+        uint256 totalSupply
+    ) {
+        pair = Duck128Factory(factory).getPairAt(index);
+        token0 = Duck128Pair(pair).token0();
+        token1 = Duck128Pair(pair).token1();
+        (reserve0, reserve1,) = Duck128Pair(pair).getReserves();
+        totalSupply = Duck128Pair(pair).totalSupply();
+    }
+
+    function getPairCount() external view returns (uint256) {
+        return Duck128Factory(factory).pairCount();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128RouterDeadline — deadline constant for router
+// ---------------------------------------------------------------------------
+
+contract Duck128RouterDeadline {
+    uint256 public constant DEADLINE_DISABLED = type(uint256).max;
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondFinalView — final aggregate view
+// ---------------------------------------------------------------------------
+
+contract Duck128PondFinalView {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function hasPair(address tokenA, address tokenB) external view returns (bool) {
+        return Duck128Factory(factory).getPair(tokenA, tokenB) != address(0);
+    }
+
+    function getPairTokensForPair(address pair) external view returns (address t0, address t1) {
+        t0 = Duck128Pair(pair).token0();
+        t1 = Duck128Pair(pair).token1();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondDoc — deployment and usage reference (no logic)
+// ---------------------------------------------------------------------------
+// Factory: deploy Duck128Factory(). feeToSetter = 0x5f8a2c9e1b4d7f0a3c6e9b2d5f8a1c4e7b0d3f6, protocolTreasury = 0x6a1d4e8b2c5f9a0d3e6b1c4f7a9d2e5b8c0f3a6.
+// Router: deploy Duck128Router(factory). Use addLiquidity, removeLiquidity, swapExactTokensForTokens, swapTokensForExactTokens.
+// Pairs: created via factory.createPair(tokenA, tokenB). Each pair is a constant-product AMM with LP tokens.
+// Fees: setPairSwapFee(pair, basisPoints) by feeToSetter. Max 300 basis points (3%).
+// Pause: factory.pause() / unpause() by feeToSetter for mainnet safety.
+
+// ---------------------------------------------------------------------------
+// Duck128PondCheck — sanity check views
