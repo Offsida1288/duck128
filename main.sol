@@ -454,3 +454,79 @@ contract Duck128Router is ReentrancyGuard {
     }
 
     function removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint256 liquidity,
+        uint256 amountAMin,
+        uint256 amountBMin,
+        address to,
+        uint256 deadline
+    ) external nonReentrant returns (uint256 amountA, uint256 amountB) {
+        if (deadline != D128R_DEADLINE_DISABLED && block.timestamp > deadline) revert D128R_Expired();
+        if (to == address(0)) revert D128R_ZeroAddress();
+        address pair = Duck128Factory(factory).getPair(tokenA, tokenB);
+        if (pair == address(0)) revert D128R_InvalidPath();
+        Duck128Pair(pair).transferFrom(msg.sender, pair, liquidity);
+        (amountA, amountB) = Duck128Pair(pair).burn(to);
+        if (amountA < amountAMin || amountB < amountBMin) revert D128R_InsufficientAmount();
+        emit D128_RouterLiquidityRemoved(pair, msg.sender, amountA, amountB, liquidity, block.number);
+        return (amountA, amountB);
+    }
+
+    function swapExactTokensForTokens(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external nonReentrant returns (uint256[] memory amounts) {
+        if (deadline != D128R_DEADLINE_DISABLED && block.timestamp > deadline) revert D128R_Expired();
+        if (path.length < 2) revert D128R_InvalidPath();
+        amounts = getAmountsOut(amountIn, path);
+        if (amounts[amounts.length - 1] < amountOutMin) revert D128R_InsufficientAmount();
+        _safeTransferFrom(path[0], msg.sender, Duck128Pair(Duck128Factory(factory).getPair(path[0], path[1])), amountIn);
+        _swap(amounts, path, to);
+        emit D128_RouterSwap(
+            Duck128Factory(factory).getPair(path[0], path[1]),
+            msg.sender,
+            amountIn,
+            0,
+            amounts[1],
+            0,
+            to,
+            block.number
+        );
+        return amounts;
+    }
+
+    function swapTokensForExactTokens(
+        uint256 amountOut,
+        uint256 amountInMax,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external nonReentrant returns (uint256[] memory amounts) {
+        if (deadline != D128R_DEADLINE_DISABLED && block.timestamp > deadline) revert D128R_Expired();
+        if (path.length < 2) revert D128R_InvalidPath();
+        amounts = getAmountsIn(amountOut, path);
+        if (amounts[0] > amountInMax) revert D128R_ExcessiveAmount();
+        _safeTransferFrom(path[0], msg.sender, Duck128Pair(Duck128Factory(factory).getPair(path[0], path[1])), amounts[0]);
+        _swap(amounts, path, to);
+        return amounts;
+    }
+
+    function _swap(uint256[] memory amounts, address[] memory path, address to) internal {
+        for (uint256 i = 0; i < path.length - 1; i++) {
+            (address input, address output) = (path[i], path[i + 1]);
+            address pair = Duck128Factory(factory).getPair(input, output);
+            (address token0,) = (Duck128Pair(pair).token0(), Duck128Pair(pair).token1());
+            (uint256 amount0Out, uint256 amount1Out) = input == token0 ? (uint256(0), amounts[i + 1]) : (amounts[i + 1], uint256(0));
+            Duck128Pair(pair).swap(amount0Out, amount1Out, i < path.length - 2 ? Duck128Factory(factory).getPair(output, path[i + 2]) : to, new bytes(0));
+        }
+    }
+
+    function getAmountsOut(uint256 amountIn, address[] memory path) public view returns (uint256[] memory amounts) {
+        if (path.length < 2) revert D128R_InvalidPath();
+        amounts = new uint256[](path.length);
+        amounts[0] = amountIn;
+        for (uint256 i = 0; i < path.length - 1; i++) {
