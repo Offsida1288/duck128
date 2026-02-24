@@ -606,3 +606,79 @@ error D128L_InsuffOutput();
 contract Duck128PondView {
     address public immutable factory;
 
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    struct PairInfo {
+        address pair;
+        address token0;
+        address token1;
+        uint112 reserve0;
+        uint112 reserve1;
+        uint256 totalSupply;
+        uint256 swapFeeBasisPoints;
+    }
+
+    function getPairInfo(address pair) external view returns (PairInfo memory info) {
+        info.pair = pair;
+        info.token0 = Duck128Pair(pair).token0();
+        info.token1 = Duck128Pair(pair).token1();
+        (info.reserve0, info.reserve1,) = Duck128Pair(pair).getReserves();
+        info.totalSupply = Duck128Pair(pair).totalSupply();
+        info.swapFeeBasisPoints = Duck128Pair(pair).swapFeeBasisPoints();
+    }
+
+    function getPairInfoBatch(address[] calldata pairs) external view returns (PairInfo[] memory out) {
+        out = new PairInfo[](pairs.length);
+        for (uint256 i = 0; i < pairs.length; i++) {
+            address p = pairs[i];
+            out[i] = PairInfo({
+                pair: p,
+                token0: Duck128Pair(p).token0(),
+                token1: Duck128Pair(p).token1(),
+                reserve0: 0,
+                reserve1: 0,
+                totalSupply: Duck128Pair(p).totalSupply(),
+                swapFeeBasisPoints: Duck128Pair(p).swapFeeBasisPoints()
+            });
+            (out[i].reserve0, out[i].reserve1,) = Duck128Pair(p).getReserves();
+        }
+    }
+
+    function getAllPairsInfo(uint256 offset, uint256 limit) external view returns (PairInfo[] memory out) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        if (offset >= n) return new PairInfo[](0);
+        if (limit > 64) limit = 64;
+        if (offset + limit > n) limit = n - offset;
+        out = new PairInfo[](limit);
+        for (uint256 i = 0; i < limit; i++) {
+            address p = Duck128Factory(factory).getPairAt(offset + i);
+            (uint112 r0, uint112 r1,) = Duck128Pair(p).getReserves();
+            out[i] = PairInfo({
+                pair: p,
+                token0: Duck128Pair(p).token0(),
+                token1: Duck128Pair(p).token1(),
+                reserve0: r0,
+                reserve1: r1,
+                totalSupply: Duck128Pair(p).totalSupply(),
+                swapFeeBasisPoints: Duck128Pair(p).swapFeeBasisPoints()
+            });
+        }
+    }
+
+    function getQuote(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn
+    ) external view returns (uint256 amountOut) {
+        address pair = Duck128Factory(factory).getPair(tokenIn, tokenOut);
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        address t0 = Duck128Pair(pair).token0();
+        (uint256 reserveIn, uint256 reserveOut) = tokenIn == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        uint256 fee = Duck128Pair(pair).swapFeeBasisPoints();
+        amountOut = Duck128Library.getAmountOut(amountIn, reserveIn, reserveOut, fee);
+    }
+}
+
+// ---------------------------------------------------------------------------
