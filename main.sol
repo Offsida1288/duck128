@@ -530,3 +530,79 @@ contract Duck128Router is ReentrancyGuard {
         amounts = new uint256[](path.length);
         amounts[0] = amountIn;
         for (uint256 i = 0; i < path.length - 1; i++) {
+            (uint112 reserveIn, uint112 reserveOut) = _getReserves(path[i], path[i + 1]);
+            amounts[i + 1] = Duck128Pair(Duck128Factory(factory).getPair(path[i], path[i + 1])).getAmountOut(amounts[i], reserveIn, reserveOut);
+        }
+        return amounts;
+    }
+
+    function getAmountsIn(uint256 amountOut, address[] memory path) public view returns (uint256[] memory amounts) {
+        if (path.length < 2) revert D128R_InvalidPath();
+        amounts = new uint256[](path.length);
+        amounts[amounts.length - 1] = amountOut;
+        for (uint256 i = path.length - 1; i > 0; i--) {
+            (uint112 reserveIn, uint112 reserveOut) = _getReserves(path[i - 1], path[i]);
+            amounts[i - 1] = Duck128Pair(Duck128Factory(factory).getPair(path[i - 1], path[i])).getAmountIn(amounts[i], reserveIn, reserveOut);
+        }
+        return amounts;
+    }
+
+    function _getReserves(address tokenA, address tokenB) internal view returns (uint112 reserveA, uint112 reserveB) {
+        address pair = Duck128Factory(factory).getPair(tokenA, tokenB);
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        (reserveA, reserveB) = tokenA < tokenB ? (r0, r1) : (r1, r0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128Library — view helpers for quotes and reserves
+// ---------------------------------------------------------------------------
+
+library Duck128Library {
+    function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
+        (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+    }
+
+    function pairFor(address factory, address tokenA, address tokenB) internal view returns (address pair) {
+        (address token0, address token1) = sortTokens(tokenA, tokenB);
+        pair = Duck128Factory(factory).getPair(token0, token1);
+    }
+
+    function getReserves(address factory, address tokenA, address tokenB) internal view returns (uint112 reserve0, uint112 reserve1) {
+        (address token0,) = sortTokens(tokenA, tokenB);
+        address pair = pairFor(factory, tokenA, tokenB);
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        (reserve0, reserve1) = tokenA == token0 ? (r0, r1) : (r1, r0);
+    }
+
+    function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) internal pure returns (uint256 amountB) {
+        if (amountA == 0) return 0;
+        if (reserveA == 0 || reserveB == 0) revert D128L_InsuffLiquidity();
+        amountB = (amountA * reserveB) / reserveA;
+    }
+
+    function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut, uint256 feeBasis) internal pure returns (uint256 amountOut) {
+        if (amountIn == 0) return 0;
+        if (reserveIn == 0 || reserveOut == 0) revert D128L_InsuffLiquidity();
+        uint256 amountInWithFee = amountIn * (10_000 - feeBasis);
+        amountOut = (amountInWithFee * reserveOut) / (reserveIn * 10_000 + amountInWithFee);
+    }
+
+    function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut, uint256 feeBasis) internal pure returns (uint256 amountIn) {
+        if (amountOut == 0) return 0;
+        if (reserveIn == 0 || reserveOut == 0) revert D128L_InsuffLiquidity();
+        if (amountOut >= reserveOut) revert D128L_InsuffOutput();
+        amountIn = (reserveIn * amountOut * 10_000) / ((reserveOut - amountOut) * (10_000 - feeBasis)) + 1;
+    }
+}
+
+error D128L_InsuffLiquidity();
+error D128L_InsuffOutput();
+
+// ---------------------------------------------------------------------------
+// Duck128PondView — aggregated view contract for UI / subgraph
+// ---------------------------------------------------------------------------
+
+contract Duck128PondView {
+    address public immutable factory;
+
