@@ -1518,3 +1518,79 @@ contract Duck128PondAggregator {
         }
     }
 
+    function getPairAddresses(uint256 offset, uint256 limit) external view returns (address[] memory out) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        if (offset >= n) return new address[](0);
+        if (limit > 64) limit = 64;
+        if (offset + limit > n) limit = n - offset;
+        out = new address[](limit);
+        for (uint256 i = 0; i < limit; i++) out[i] = Duck128Factory(factory).getPairAt(offset + i);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PairList — list pairs with optional token filter
+// ---------------------------------------------------------------------------
+
+contract Duck128PairList {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function listAllPairs() external view returns (address[] memory) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        address[] memory out = new address[](n);
+        for (uint256 i = 0; i < n; i++) out[i] = Duck128Factory(factory).getPairAt(i);
+        return out;
+    }
+
+    function listPairsWithToken(address token) external view returns (address[] memory out) {
+        uint256 n = Duck128Factory(factory).pairCount();
+        address[] memory tmp = new address[](n);
+        uint256 count = 0;
+        for (uint256 i = 0; i < n; i++) {
+            address p = Duck128Factory(factory).getPairAt(i);
+            if (Duck128Pair(p).token0() == token || Duck128Pair(p).token1() == token) tmp[count++] = p;
+        }
+        out = new address[](count);
+        for (uint256 j = 0; j < count; j++) out[j] = tmp[j];
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128QuoteSingle — single-hop quote helper
+// ---------------------------------------------------------------------------
+
+contract Duck128QuoteSingle {
+    address public immutable factory;
+
+    constructor(address _factory) {
+        factory = _factory;
+    }
+
+    function quoteInToOut(address tokenIn, address tokenOut, uint256 amountIn) external view returns (uint256 amountOut) {
+        address pair = Duck128Factory(factory).getPair(tokenIn, tokenOut);
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        address t0 = Duck128Pair(pair).token0();
+        (uint256 ri, uint256 ro) = tokenIn == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        amountOut = Duck128Pair(pair).getAmountOut(amountIn, ri, ro);
+    }
+
+    function quoteOutToIn(address tokenIn, address tokenOut, uint256 amountOut) external view returns (uint256 amountIn) {
+        address pair = Duck128Factory(factory).getPair(tokenIn, tokenOut);
+        (uint112 r0, uint112 r1,) = Duck128Pair(pair).getReserves();
+        address t0 = Duck128Pair(pair).token0();
+        (uint256 ri, uint256 ro) = tokenIn == t0 ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+        amountIn = Duck128Pair(pair).getAmountIn(amountOut, ri, ro);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Duck128PondConstantsView — expose constants for frontends
+// ---------------------------------------------------------------------------
+
+contract Duck128PondConstantsView {
+    function getMaxPairs() external pure returns (uint256) { return 128; }
+    function getBasisDenom() external pure returns (uint256) { return 10_000; }
